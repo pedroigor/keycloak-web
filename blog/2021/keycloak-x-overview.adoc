@@ -1,0 +1,246 @@
+:title: Keycloak.X 15.1 - The missing release notes
+:date: 2021-10-28
+:publish: false
+:author: Keycloak Team
+
+The Keycloak https://www.keycloak.org/docs/latest/release_notes/index.html#quarkus-distribution-preview[15.1.0.Final] release brings
+a number of updates to the Keycloak.X initiate, the next generation of Keycloak.
+
+Since we announced the new distribution based on https://www.keycloak.org/2020/12/first-keycloak-x-release.adoc[Quarkus], a lot of improvements
+have been made and the 15.1.0.Final release is what we think is the baseline for the new approach to install, configure, run, and manage Keycloak.
+
+If you are not familiar yet about the new distribution, please consider reading this https://www.keycloak.org/2020/12/first-keycloak-x-release.adoc[blog] post first. Otherwise,
+you should find some important updates herein since the last time we talked about it.
+
+In this blog post, we would like to highlight some key aspects through some key common procedures to configure and start the server.
+
+== Installing
+
+Although in this release the new distribution is still marked as tech preview, you should expect it to become the official distribution in future versions and until there we would be
+focusing on looking at the feedback we are already receiving from the community (many thanks).
+
+The new distribution is available at https://github.com/keycloak/keycloak/releases/download/15.1.0/keycloak.x-preview-15.1.0.tar.gz.
+
+=== Directory Structure
+
+The `bin` directory is where all binaries are located, basically the new Keycloak CLI and a few other utilities.
+
+The `conf` directory, as the name suggests, is where configuration files are located. You may be using the `keycloak.properties` file within this directory to configure the server or not. More on that you’ll see later when we talk about configuration in more detail.
+
+The `providers` directory is where you should deploy your JAR files with your custom providers or themes jar.
+
+== Getting Started
+
+Through the CLI you should be able to look at the different commands and configuration options you can use. By typing:
+
+[source,bash]
+----
+kc.sh --help
+----
+
+You should see a help message with information about the main commands you can use and usage examples. You can also
+enable auto-complete to the CLI, for more details run `kc.sh tools completion -h`.
+
+Let us start by starting the server in development mode. By doing that, Keycloak is going to relax its strict default configuration and
+start an instance for development and testing purposes.
+
+[source,bash]
+----
+kc.sh start-dev
+----
+
+Once the server is started, it should be available at http://localhost:8080 as your local IAM service.
+
+For more information about the different configuration options you can run `kc.sh|bat --help-all`.
+
+== Configuring
+
+By default, the server is more strict in terms of configuration when running the server in production. To start the server,
+this should be the minimal configuration:
+
+[source,bash]
+----
+kc.sh start --auto-build \
+      --db=postgres \
+      --db-url-host mypostgres \
+      --db-username myuser \
+      --db-password change_me \
+      --hostname mykeycloak \
+      --proxy reencrypt \
+      --https-certificate-file mykeycloak.crt \
+      --https-certificate-key-file mykeycloak.key
+----
+
+By starting the server using this configuration, you should have an instance:
+
+* Using a PostgreSQL Database from the `mypostgres` host using the default `keycloak` schema
+* Exposing Keycloak endpoints are exposed using the `mykeycloak` public domain name
+* Ready to communicate with a reverse proxy and read the `X-Forward-*` headers
+* Receiving requests through HTTP/TLS.
+* Pre-configured to join a cluster
+
+=== Database
+
+All database configuration options have a `db` prefix. You are able to change the database by adding the following options:
+
+[source,bash]
+----
+kc.sh start --auto-build --db=postgres --db-username=**** --db-password=**** ...
+----
+
+For each database we provide good defaults for JDBC URL, driver, database name, and dialect. So you don’t need to provide these options if you are happy with the defaults.
+
+In the example above, the server connects to a PostgreSQL service running on localhost where the database name is `keycloak`.
+
+If you need to customize the JDBC URL and other parameters, you can add the `--db-url=jdbc:postgresql://<host>/<database>` option and set
+your own JDBC URL.
+
+Or still rely on the default JDBC URL and set both database host and name by adding the options `--db-url-host` and `--db-url-database`, respectively.
+
+=== Hostname
+
+All hostname configuration options have a `hostname` prefix.
+
+You should be able to expose Keycloak endpoints using a specific domain name by adding the `--hostname mykeycloak.org` option.
+
+=== Proxy
+
+All proxy configuration options have a `proxy` prefix. You should be able to use different proxy modes depending on your proxy and TLS termination settings.
+
+The `none` mode disables proxy support and is the default value.
+
+The `edge` mode enables communication through HTTP. This mode is suitable for deployments with a highly secure internal network where the reverse proxy keeps a secure connection (HTTP over TLS) with clients while communicating with Keycloak using HTTP.
+
+The `reencrypt` mode requires communication through HTTPS. This mode is suitable for deployments where internal communication between the reverse proxy and Keycloak should also be protected where different keys and certificates can be used on the reverse proxy as well as on Keycloak.
+
+The `passthrough` mode enables communication through HTTP or HTTPS. This mode is suitable for deployments where the reverse proxy is only forwarding the requests to the Keycloak server so that secure connections between the server and clients are based on the keys and certificates used by the Keycloak server itself.
+
+=== HTTP/TLS
+
+In the real world, you would configure a valid key pair and certificate, but you can use the command below to generate a self-signed certificate to understand how to
+setup HTTPS.
+
+Just make sure to execute the following command at the root directory of the distribution:
+
+[source,bash]
+----
+keytool -genkeypair -storepass password -storetype PKCS12 -keyalg RSA -keysize 2048 -dname "CN=server" -alias server -ext "SAN:c=DNS:localhost,IP:127.0.0.1" -keystore conf/server.keystore
+----
+
+The command above should create a `server.keystore` file inside the `conf` directory. By default, Keycloak will load the keys and certificates from this keystore if none was set.
+
+Alternative, you can use the `--https-certificate-file` and the `--https-certificate-key-file` options to set the certificate and key PEM-format files, respectivelly.
+
+=== Clustering
+
+All clustering configuration options have a `cache` prefix. By default, the server starts in high-availability mode and clustering is enabled.
+
+The default cache configuration is located at `conf/cache-ispn.xml`. The cache configuration is a regular https://infinispan.org/docs/13.0.x/titles/configuring/configuring.html[Infinispan] configuration file.
+You can also specify your own configuration by adding the `--cache-config-file=mycache.xml` option and load a configuration file from the `conf` directory.
+
+The distribution also provides some default transport stacks for running a cluster using specific protocols such as `tcp`, and `udp`, and on specific
+platforms and cloud providers like `kubernetes`, `ec2`, `google`, and `azure`. By adding the `--cache-stack=kubernetes` option you are half away to run a cluster on Kubernetes.
+
+For more information about the default transport stacks, look at this Infinispan https://infinispan.org/docs/dev/titles/embedding/embedding.html#jgroups-default_cluster-transport[documentation].
+
+== Container
+
+To run Keycloak using Docker, you can use the following command:
+
+[source,bash]
+----
+docker run --name keycloak -p 8080:8080 \
+       -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=change_me \
+       quay.io/keycloak/keycloak-x \
+       start --auto-build --db=postgres --db-url-host=mypostgres --db-username=keycloak --db-password=change_me --hostname=mykeycloak.org --proxy=reencrypt
+----
+
+You can run the server in the same manner as when using the distribution by passing any command-line argument. The container image is basically a wrapper on top of the
+distribution and any command and configuration option can be used similarly as when using the distribution itself.
+
+You should also be able to use environment variables for any of the available options:
+
+[source,bash]
+----
+docker run --name keycloak -p 8080:8080 \
+       -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=change_me \
+       -e KC_DB=postgres -e KC_DB_URL_HOST=mypostgres -e KC_DB_USERNAME=myuser -e KC_DB_PASSWORD=change_me -e KC_HOSTNAME=mykeycloak.org -e KC_PROXY=reencrypt \
+       quay.io/keycloak/keycloak-x \
+       start-dev
+----
+
+For more details and examples, see https://github.com/keycloak/keycloak-containers/tree/master/server-x[https://github.com/keycloak/keycloak-containers/tree/master/server-x].
+
+== Optimizing the Server
+
+Configuration options are organized in two categories:
+
+* Those that can be set at *runtime* when starting the server
+* Those that can only be set when *configuring* the server through the `build` command
+
+As an example, if you want to change the HTTP port to `8180`, you may use:
+
+[source,bash]
+----
+kc.sh start --http-port=8180
+----
+
+However, for changing the database, you should first run the `build` command before starting the server:
+
+[source,bash]
+----
+kc.sh build --db=postgres --db-username=******* --db-password=*******
+Kc.sh start # then start the server
+----
+
+By using the `build` command to configure the server, the distribution is able to optimize itself and produce a server image fully optimized with your settings.
+Subsequent server starts will be based on this image and use an optimized runtime, without any need to specify the same options again. Similar to how you build a container image where containers run based on a pre-configured and immutable environment.
+
+The optimizations are based on a closed-world assumption of some key configuration options (the build time options), and they help to move costly operations that otherwise
+would happen at runtime when running the server. As a consequence, you should expect a much better startup time and memory footprint. Ideal when running the server as a container and deploying it to Kubernetes and Openshift.
+
+Most of the optimizations are performed by Quarkus but there are several improvements in Keycloak itself like those related to database, clustering, features, and installed providers.
+
+=== Auto Build
+
+When using the `--auto-build` option with the `start` command the server is transparently running the `build` command prior to starting the server. That is the reason why you
+can use all the available options (runtime and build time) when starting the server.
+
+This option is a trade-off between usability (you run a single command) and a slower startup time. Although the `--auto-build` option is capable of deciding whether a `build` should happen or not by comparing
+the options already persisted into the server image and those explicitly defined through the CLI or the `conf/keycloak.properties` file, there is an additional cost.
+
+== Custom Providers
+
+_See Breaking Changes for more information about breaking changes that affect custom providers._
+
+To install a custom provider, you should copy the JAR file to the `providers` directory and run the `build` command before starting the server.
+
+[source,bash]
+----
+cp myprovider.jar providers
+Kc.sh build [options]
+----
+
+Only after running the `build` command the custom provider is installed to the server. As mentioned before, Keycloak must know beforehand about the installed providers so that
+it can perform optimizations to the server runtime.
+
+From an SPI/API perspective, you should not expect any change but future improvements around developer experience by leveraging the technologies and tools provided by Quarkus.
+
+== Documentation
+
+That is probably what we are missing most, and we are focused on re-writing parts of the official documentation and writing guidelines to cover the aspects herein mentioned and more.
+
+== Breaking Changes
+
+* Keycloak no longer runs on top of a JEE Application Server and that might impact your deployment if your custom providers rely on JEE technologies such as
+Enterprise Java Beans (EJB), Context And Dependency Injection (CDI), and any other capability specific to Wildfly like domain mode and to its subsystems.
+
+* The server is by now available at the root path, `/`, and no longer at the `/auth` path. You should still be able to use the `/auth` path by using the `--http-relative-path=/auth` option.
+
+== Conclusion
+
+We would like to thank all the community for the feedback we have been receiving after the 15.1.0.Final release.
+
+The transition to the new distribution should happen soon, and we are going to be working on polishing, fixing issues, and writing documentation.
+
+Help us with your feedback and join our https://github.com/keycloak/keycloak/discussions/8654[discussions].
